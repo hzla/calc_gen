@@ -18,4 +18,3 @@ replace NPOINT_ID with the id from the uploaded json on npoint in the URL
 
 save files can be read by clicking the `upload save button in the middle column of the calc` and clicking import
 
-you can also run the command `generate LEVEL` in the import text box to generate an example box of pokemon using your repo's encounter files
