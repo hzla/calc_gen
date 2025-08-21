@@ -12,7 +12,7 @@ you should now have a page for your json like so: https://www.npoint.io/docs/005
 
 0055b511e046845c72b6 would be the NPOINT_ID
 
-calc is now viewable at: https://hzla.github.io/Dynamic-Calc-HGE/?data=NPOINT_ID&gen=8&types=6&dmgGen=8&switchIn=4&mechanics=hgengine
+calc is now viewable at: https://hzla.github.io/Dynamic-Calc/?data=NPOINT_ID&gen=8&types=6&dmgGen=8&switchIn=4&mechanics=hgengine
 
 replace NPOINT_ID with the id from the uploaded json on npoint in the URL
 
