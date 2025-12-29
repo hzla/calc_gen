@@ -6,10 +6,11 @@ require_relative 'inc_converter'
 dex_data = File.readlines('../armips/data/mondata.s')
 move_data = File.readlines('../armips/data/moves.s')
 set_data = File.readlines('../armips/data/trainers/trainers.s')
-ls_data = File.readlines('../armips/data/levelupdata.s')
-tm_data = File.readlines('../armips/data/tmlearnset.txt')
-tutor_data = File.readlines('../armips/data/tutordata.txt')
+ls_data = JSON.parse(File.read('../data/learnsets/learnsets.json'))
+
 enc_data = File.readlines('../armips/data/encounters.s')
+
+output_encounters = false
 
 poks = {}
 pok_names = {}
@@ -30,6 +31,7 @@ growths = {"GROWTH_MEDIUM_FAST" => 0, "GROWTH_ERRATIC" => 1, "GROWTH_FLUCTUATING
 forms = form_info
 
 
+################## MON DATA ##################
 
 i = 0
 while i < dex_data.length
@@ -44,7 +46,6 @@ while i < dex_data.length
 
 		pok_variable_name = line.split("\"")[0].split(" ")[-1][0..-2]
 		pok_name = line.split("\"")[-1].gsub("♂", "-M").gsub("♀", "-F")
-
 		#handle megas
 		if pok_variable_name.include?("_MEGA_")
 			pok_name = pok_variable_name.split("SPECIES_MEGA_")[-1].downcase.capitalize + "-Mega"
@@ -53,13 +54,13 @@ while i < dex_data.length
 
 		#attempt to guess form names
 		if pok_name == "-----" && pok_variable_name != ""
-			pok_name = pok_variable_name.split("SPECIES_")[-1].downcase.capitalize.gsub("_galarian", "-Galar").gsub("_alolan", "-Alola").gsub("_paldean", "-Paldea")
+			pok_name = pok_variable_name.split("SPECIES_")[-1].downcase.capitalize.gsub("_galarian", "-Galar").gsub("_alolan", "-Alola").gsub("_paldean", "-Paldea").gsub("_hisuian", "-Hisui")
 		end
 		
-		current_pok = pok_name
-		poks[pok_name] = {}
+		current_pok = pok_name.clean
+		poks[current_pok] = {"name": pok_name}
 		pok_names[pok_variable_name] = pok_name
-		ordered_poks << pok_name
+		ordered_poks << current_pok
 	end
 
 	i += 1
@@ -77,6 +78,10 @@ while i < dex_data.length
 		end
 	end
 
+	if line.include?("genderratio")
+		gender_val = line.split(" ")[1].to_i
+		poks[current_pok]["gend"] = gender_val
+	end
 
 
 	if line.include?("growthrate")
@@ -106,6 +111,10 @@ while i < dex_data.length
 end
 
 
+
+
+################## MOVE DATA ##################
+
 i = 0
 current_move = nil
 while i < move_data.length
@@ -130,6 +139,12 @@ while i < move_data.length
 		npoint_moves[current_move]["category"] = category
 	end
 
+	# set pp
+	if line[0..1] == "pp" 
+		pp = line.split(" ")[1].to_i
+		npoint_moves[current_move]["pp"] = pp
+	end
+
 	# set basePower
 	if line[0..3] == "base" 
 		bp = line[10..-1].strip.to_i
@@ -152,6 +167,8 @@ current_tr_id = nil
 current_sub_index = 0
 set_constants = {}
 trainer_counts = {}
+has_items = false
+has_moves = false
 
 rival_index = 0
 male_rival = "Ethan"
@@ -160,7 +177,9 @@ passerby_rival = "Silver"
 
 
 
-## set data
+################## SET DATA ##################
+
+
 while i < set_data.length
 	line = set_data[i].strip
 
@@ -186,9 +205,14 @@ while i < set_data.length
 
 		tr_class = set_data[i + 2].split("CLASS_")[-1].downcase.split("_").map(&:capitalize).join(" ").strip
 
-		tr_class = "" if tr_class == tr_name
+		# Handle redundant trainer titles like "Leader Falkner Falkner"
+		if tr_class.include?("Leader ")
+			tr_class = "Leader"
+		end
 
 		tr_title = "#{tr_class} #{tr_name}"
+
+
 
 		if tr_title.include?(male_rival) || tr_title.include?(male_rival) || tr_title.include?(passerby_rival)
 			tr_title += " |Starter #{rival_index % 3 + 1}|"
@@ -207,96 +231,99 @@ while i < set_data.length
 		end
 
 		current_tr_title = tr_title
-
-
-		j = 0
-
-		until set_data[i + j].include?("endentry")
-			if set_data[i + j].include?("battletype")
-				current_battle_type = set_data[i + j].include?("SINGLE") ? "Singles" : "Doubles"
-			end
-			j += 1
-		end
-
+		current_battle_type = set_data[i + 9].include?("SINGLE") ? "Singles" : "Doubles"
 		current_sub_index = 0
+	end
+
+	if line.include?('trainermontype')
+		
+		has_items = line.include?('ITEMS')
+		has_moves = line.include?('MOVES')
 	end
 
 
 
 
-	if line.include?("// mon")
-		i += 1
-		
-		ivs = {}
-		species = ""
-		item = ""
-		moves = []
-		ability = ""
-		nature = "Hardy"
 
+	if line[0..4] == "level"
+		level = parse_level set_constants, line
 
-		line = set_data[i]
-
-		until line.include?("// mon")
-			
-			if line.include?("monwithform")
-				form_index = line.split(",")[-1].strip.to_i
-				species = pok_names[line.strip.split(" ")[1].strip.gsub(",","")]
-				if forms[species]
-					species = "#{species}-#{forms[species][form_index - 1]}"
-				end
-			end
-
-			if line.include?("level ")
-				level = parse_level set_constants, line
-			end
-
-
-
-			if line.include?("pokemon ")
-				species = pok_names[line.strip.split(" ")[1].strip.gsub(",","")]
-			end
-
-			if line.include?("setivs ")
-				ivs = {}
-				iv_values = line.strip[7..-1].split(",").map(&:strip).map(&:to_i)
-				(0..5).each do |n|
-					ivs[stat_names[n]] = iv_values[n]
-				end
-			end
-
-			if line.include?("item ITEM")
-				item = showdown_parse line.gsub("item ", "").split("ITEM_")[-1].strip.gsub("Never Melt", "Never-Melt").gsub("Heavy Duty", "Heavy-Duty")
-				item = "" if item == "0"
-				if item[-3..-1] == "ite" && item != "Eviolite"
-					species = "#{species}-Mega"
-				end
-				species = "#{species}-Mega-X" if item[-5..-1] == "ite X"
-				species = "#{species}-Mega-Y" if item[-5..-1] == "ite Y"
-			end
-
-
-			if line.include?("move MOVE")
-				move1 = move_names[parse_move(set_data[i].strip.split("move ")[1])]
-				move2 = move_names[parse_move(set_data[i + 1].strip.split("move ")[1])]
-				move3 = move_names[parse_move(set_data[i + 2].strip.split("move ")[1])]
-				move4 = move_names[parse_move(set_data[i + 3].strip.split("move ")[1])]
-
-				moves = [move1 || "", move2 || "", move3 || "", move4 || ""]
-				i += 3
-			end
-
-			if line.include?("ability ABILITY")
-				ability = parse_ability line
-			end
-
-			if line.include?("nature NATURE")
-				nature = line.strip[14..-1].downcase.capitalize
-			end
-
-			i += 1
-			line = set_data[i]
+		# handle forms
+		if set_data[i + 1].include?("monwithform")
+			form_index = set_data[i + 1].split(",")[-1].strip.to_i
+			species = pok_names[set_data[i + 1].strip.split(" ")[1].strip.gsub(",","")]
+			if forms[species]
+				species = "#{species}-#{forms[species][form_index - 1]}"
+			end		
+		else
+			species = pok_names[set_data[i + 1].strip.split(" ")[1].strip.gsub(",","")]
 		end
+
+
+
+
+		abilityslot = set_data[i - 1].split(" ")[0].to_i / 32
+		# First set ability to specified slot
+		ability = poks[species]["abs"][abilityslot] if poks[species]
+		# Overwrite if an ability name is specified
+		ability = parse_ability set_data[i + 7] if parse_ability set_data[i + 7]
+			
+
+		if has_items
+		
+			item = showdown_parse set_data[i + 2].gsub("item ", "").split("ITEM_")[-1].strip
+			item = "" if item == "0"
+
+			item = item.gsub("Never Melt", "Never-Melt").gsub("Heavy Duty", "Heavy-Duty")
+
+			# handle megas
+			if item[-3..-1] == "ite" && item != "Eviolite"
+				species = "#{species}-Mega"
+			end
+
+			species = "#{species}-Mega-X" if item[-5..-1] == "ite X"
+			species = "#{species}-Mega-Y" if item[-5..-1] == "ite Y"
+		else
+			item = ""
+		end
+
+
+		moves = []
+
+	
+
+		if has_moves
+
+			(0..3).each do |n|
+				moves << (move_names[parse_move(set_data[i + n + 2 + (has_items ? 1 : 0)].strip.split("move ")[1])] || "")
+			end
+		end
+
+		ivs = {}
+
+
+		begin
+			iv_values = set_data[i+9].strip[7..-1].split(",").map(&:strip).map(&:to_i)
+			(0..5).each do |n|
+				ivs[stat_names[n]] = iv_values[n]
+			end
+		rescue
+			(0..5).each do |n|
+				ivs[stat_names[n]] = (set_data[i - 2].split(" ")[1].to_i >> 3)
+			end
+		end
+
+
+		begin
+			nature = set_data[i + 11].strip[14..-1].downcase.capitalize
+		rescue Exception => e
+			nature = "Hardy"
+			(0..5).each do |n|
+				ivs[stat_names[n]] = 0
+			end
+		end
+		
+
 
 		sets[species] ||= {}
 		set_name = "Lvl #{level} #{current_tr_title}"
@@ -312,89 +339,159 @@ while i < set_data.length
 			"battle_type": current_battle_type,
 		}
 		current_sub_index += 1
-	end
-
-
-
-	# relies on consistent formatting
-	# if line[0..4] == "level"
-	# 	level = parse_level set_constants, line
-
-
-	# 	# handle forms
-	# 	if set_data[i + 1].include?("monwithform")
-	# 		form_index = set_data[i + 1].split(",")[-1].strip.to_i
-	# 		species = pok_names[set_data[i + 1].strip.split(" ")[1].strip.gsub(",","")]
-	# 		if forms[species]
-	# 			species = "#{species}-#{forms[species][form_index - 1]}"
-	# 		end
-			
-	# 	else
-	# 		species = pok_names[set_data[i + 1].strip.split(" ")[1].strip.gsub(",","")]
-	# 	end
-			
-		
-	# 	item = showdown_parse set_data[i + 2].gsub("item ", "").split("ITEM_")[-1].strip
-	# 	item = "" if item == "0"
-
-	# 	item = item.gsub("Never Melt", "Never-Melt").gsub("Heavy Duty", "Heavy-Duty")
-
-
-
-	# 	# handle megas
-	# 	if item[-3..-1] == "ite" && item != "Eviolite"
-	# 		species = "#{species}-Mega"
-	# 	end
-
-	# 	species = "#{species}-Mega-X" if item[-5..-1] == "ite X"
-	# 	species = "#{species}-Mega-Y" if item[-5..-1] == "ite Y"
-
-
-	# 	begin
-	# 		move1 = move_names[parse_move(set_data[i + 3].strip.split("move ")[1])]
-	# 		move2 = move_names[parse_move(set_data[i + 4].strip.split("move ")[1])]
-	# 		move3 = move_names[parse_move(set_data[i + 5].strip.split("move ")[1])]
-	# 		move4 = move_names[parse_move(set_data[i + 6].strip.split("move ")[1])]
-
-	# 		moves = [move1 || "", move2 || "", move3 || "", move4 || ""]
-	# 	rescue
-	# 		p "no moves detected for trainer #{tr_name}"
-	# 		moves = ["", "", "", ""]
-	# 	end
-
-	# 	ability = parse_ability set_data[i + 7]
-
-	# 	ivs = {}
-	# 	iv_values = set_data[i+9].strip[7..-1].split(",").map(&:strip).map(&:to_i)
-	# 	(0..5).each do |n|
-	# 		ivs[stat_names[n]] = iv_values[n]
-	# 	end
-
-	# 	p set_data[i + 11]
-
-	# 	nature = set_data[i + 11].strip[14..-1].downcase.capitalize
-
-		
-
-	# 	sets[species] ||= {}
-	# 	set_name = "Lvl #{level} #{current_tr_title}"
-	# 	sets[species][set_name] = {
-	# 		"ivs": ivs, 
-	# 		"item": item,
-	# 		"level": level,
-	# 		"moves": moves,
-	# 		"tr_id": current_tr_id,
-	# 		"nature": nature,
-	# 		"ability": ability,
-	# 		"sub_index": current_sub_index,
-	# 		"battle_type": current_battle_type,
-	# 	}
-	# 	current_sub_index += 1
-	# end 
+	end 
 	i += 1
 	break if i >= 44644
 end
 
+i = 0
+current_lvl = 1
+current_water_lvl = 101
+current_location = ""
+current_grass_pok_count = 0
+
+levels = {}
+encs = {}
+grass_rates = [20,20,10,10,10,10,5,5,4,4,1,1]
+water_rates = [60,30,5,4,1]
+
+current_section_info = {}
+current_section_index = 0
+
+current_section_name = ""
+
+
+
+
+while i < enc_data.length
+	line = enc_data[i].strip
+
+	if line.include?("/************** ") || line.include?('encounterdata')
+		
+		if line.include?("// ")
+			current_location = line.split("// ")[-1].strip
+		else
+			current_location = line.split(" ")[1..-2].join(" ")
+		end
+		encs[current_location] = {}
+		current_water_lvl = 101
+	end
+
+	if line.include?("// ") && !line.include?('encounter_data')
+		current_section_info = {}
+		current_section_index = 0
+		if line.include?("surf encounters")
+			current_section_name = "surf"
+		end
+
+		if line.include?("old rod")
+			current_section_name = "rod"
+		end
+	end
+
+	if line[0..4] == "walkl"
+		current_lvl = line.split(",")[-1].strip.to_i
+		if current_lvl == 0
+			current_lvl = 59
+		end
+
+		current_lvl = 101 if !current_lvl
+		encs[current_location]["grass_lvl"] = current_lvl
+	end
+
+
+	#skip radio poks/rock smash
+	if line.include?("hoenn") || line.include?("sinnoh") || line.include?("rock smash")
+		i += 3
+		next
+	end
+
+	#skip good/super rod
+	if line.include?("good rod") || line.include?("super rod")
+		i += 6
+		next
+	end
+
+	#skip swarm
+	if line.include?("// swarm")
+		i += 2
+		next
+	end
+
+
+
+	if line[0..6] == "pokemon"
+		# remove comments
+		line = line.split('//').first.strip
+
+		pok_variable_name = line.split(" ")[-1].strip
+		pok_name = pok_names[pok_variable_name].clean
+
+
+
+
+
+		#earliest available level
+		poks[pok_name]["eal"] ||= 101
+		poks[pok_name]["eal"] = [poks[pok_name]["eal"], current_lvl].min
+
+
+		if current_section_info[pok_name] 
+			current_section_info[pok_name]["rate"] += grass_rates[current_section_index]
+		else
+			current_section_info[pok_name] = {"rate" => grass_rates[current_section_index], "index" => current_section_index}
+		end
+		current_section_index += 1
+
+		enc_info = {}
+		enc_info["s"] = pok_name
+		enc_info["rate"] = current_section_info[pok_name]["rate"]
+		
+		encs[current_location]["grass"] ||= []
+		encs[current_location]["grass"][current_section_info[pok_name]["index"]] = enc_info
+
+
+	end
+
+	if line[0..9] == "encounter "
+		pok_variable_name = line.split(" ")[1].strip[0..-2]
+		pok_name = pok_names[pok_variable_name].clean
+
+		water_level = line.split(",")[1].strip.to_i
+
+		if current_section_info[pok_name] 
+			current_section_info[pok_name]["rate"] += water_rates[current_section_index]
+		else
+			current_section_info[pok_name] = {"rate" => water_rates[current_section_index], "index" => current_section_index}
+		end
+		current_section_index += 1
+		enc_info = {}
+		enc_info["s"] = pok_name
+		enc_info["rate"] = current_section_info[pok_name]["rate"]
+
+
+
+		poks[pok_name]["eal"] ||= 101
+		poks[pok_name]["eal"] = [poks[pok_name]["eal"], water_level].min
+
+		current_water_lvl = [water_level, current_water_lvl].min
+
+		encs[current_location]["#{current_section_name}_lvl"] = current_water_lvl
+
+		encs[current_location][current_section_name] ||= []
+		encs[current_location][current_section_name][current_section_info[pok_name]["index"]] = enc_info
+	end
+	i += 1
+end
+
+formatted_encs = {}
+
+encs.each do |k,v|
+	formatted_encs[k] = v
+	formatted_encs[k]["grass"] = formatted_encs[k]["grass"].compact
+	formatted_encs[k]["surf"] = formatted_encs[k]["surf"].compact
+	formatted_encs[k]["rod"] = formatted_encs[k]["rod"].compact
+end
 
 
 i = 0
@@ -406,95 +503,38 @@ ordered_items = get_constants "../asm/include/items.inc", "ITEM"
 ordered_abilities = get_constants "../asm/include/abilities.inc", "ABILITY"
 includes = {"poks" => ordered_poks, "moves" => ordered_moves, "abilities" => ordered_abilities, "items" => ordered_items, "growths" => ordered_growths}
 
-while i < ls_data.length
-	line = ls_data[i].strip
 
-	if line.include?("levelup")
-		pok_variable_name = line.split(" ")[1]
-		pok_name = pok_names[pok_variable_name] 
+learnsets = {}
 
-		if !pok_name
-			break
-		end
+ls_data.each do |pok, ls|
+	pok_name = pok.split("SPECIES_")[1].clean
+	learnsets[pok_name] = {}
 
-		current_ls = []
-		current_pok = pok_name
+	learnsets[pok_name]["ls"] = []
+	learnsets[pok_name]["tms"] = []
+	learnsets[pok_name]["tutors"] = []
+	learnsets[pok_name]["egg"] = []
+
+	ls["LevelMoves"].each do |ls_move|
+		learnsets[pok_name]["ls"] << [ls_move["Level"], move_names[ls_move["Move"]]]
 	end
 
-	if line.include?("learnset MOVE")
-		move_variable_name = line.split(" ")[1][0..-2]
-		lvl_learned = line.split(", ")[-1].to_i
-		current_ls << [lvl_learned, move_names[move_variable_name]]
+	ls["MachineMoves"].each do |ls_move|
+		learnsets[pok_name]["tms"] << move_names[ls_move]
 	end
 
-	if line.include?("terminate")
-		poks[current_pok]["learnset_info"] ||= {}
-		poks[current_pok]["learnset_info"]["ls"] = current_ls 
+	ls["TutorMoves"].each do |ls_move|
+		learnsets[pok_name]["tutors"] << move_names[ls_move]
 	end
 
-	i += 1
+	ls["EggMoves"].each do |ls_move|
+		learnsets[pok_name]["egg"] << move_names[ls_move]
+	end
 end
 
 
-i = 0
-current_tm = ""
-while i < tm_data.length
-	line = tm_data[i].strip
-
-	if line.include?("MOVE_")
-		move_variable_name = line.split(" ")[1]
-		move_name = move_names[move_variable_name] 
-
-		current_tm = move_name
-	end
-
-	if line.include?("SPECIES_")
-		pok_variable_name = line.strip
-		pok_name = pok_names[pok_variable_name]
-		begin
-			poks[pok_name]["learnset_info"]["tms"] ||= []
-		rescue
-			# p "Could not find #{pok_name}"
-			i += 1
-			next
-		end
-		poks[pok_name]["learnset_info"]["tms"] << current_tm
-	end
-
-	i += 1
-end
-
-i = 0
-current_tutor = ""
-while i < tutor_data.length
-	line = tutor_data[i].strip
-
-	if line.include?("MOVE_")
-		move_variable_name = line.split(" ")[1]
-		move_name = move_names[move_variable_name] 
-
-		current_tutor = move_name
-	end
-
-	if line.include?("SPECIES_")
-		pok_variable_name = line.strip
-		pok_name = pok_names[pok_variable_name]
-		begin
-			poks[pok_name]["learnset_info"]["tutors"] ||= []
-		rescue
-			# p "Could not find #{pok_name}"
-			i += 1
-			next
-		end
-		poks[pok_name]["learnset_info"]["tutors"] << current_tutor
-	end
-
-	i += 1
-end
-
-
-npoint_data = {"poks" => poks, "moves" => npoint_moves, "formatted_sets" => sets, "includes" => includes}
-File.write("./npoint.json", JSON.pretty_generate(npoint_data))
+npoint_data = {"poks" => poks, "moves" => npoint_moves, "formatted_sets" => sets, "includes" => includes, "encs" => encs, "learnsets" => learnsets}
+File.write("./npoint.json", JSON.dump(npoint_data))
 
 
 
