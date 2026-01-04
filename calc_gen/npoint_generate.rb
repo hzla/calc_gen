@@ -46,6 +46,20 @@ while i < dex_data.length
 
 		pok_variable_name = line.split("\"")[0].split(" ")[-1][0..-2]
 		pok_name = line.split("\"")[-1].gsub("♂", "-M").gsub("♀", "-F")
+
+		pok_variable_species = ""
+		pok_variable_species = pok_variable_name.split("_")[-1].downcase.capitalize if pok_variable_name != ""
+        
+        # For the following abreviations 
+        # "Fletchinder","Crabominable","Blacephalon","Corvisquire","Corviknight","Barraskewda","Centiskorch",
+        # "Polteageist","Stonjourner","Basculegion","Meowscarada","Squawkabilly","Kilowattrel","Brambleghast","Dudunsparce","Poltchageist",
+        # "Fezandipiti","Continental","Archipelago"
+		
+		if pok_variable_species.length > 10
+			pok_name = pok_variable_species
+		end
+
+
 		#handle megas
 		if pok_variable_name.include?("_MEGA_")
 			pok_name = pok_variable_name.split("SPECIES_MEGA_")[-1].downcase.capitalize + "-Mega"
@@ -535,13 +549,4 @@ end
 
 npoint_data = {"poks" => poks, "moves" => npoint_moves, "formatted_sets" => sets, "includes" => includes, "encs" => encs, "learnsets" => learnsets}
 File.write("./npoint.json", JSON.dump(npoint_data))
-
-
-
-
-
-
-
-
-
 
